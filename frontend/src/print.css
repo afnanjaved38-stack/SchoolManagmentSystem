@@ -1,0 +1,93 @@
+@media print {
+  /* Hide everything except the print container */
+  body * {
+    visibility: hidden;
+  }
+  
+  #print-area, #print-area * {
+    visibility: visible;
+  }
+
+  #print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Remove background colors and shadows for better B&W printing */
+  .bg-slate-900, .bg-slate-950, .bg-slate-800 {
+    background: white !important;
+    border-color: #eee !important;
+  }
+
+  .text-white, .text-slate-300, .text-slate-400, .text-slate-500 {
+    color: black !important;
+  }
+
+  .text-blue-500, .text-emerald-500, .text-amber-500 {
+    color: black !important;
+    font-weight: bold;
+  }
+
+  .border-slate-800, .border-slate-700 {
+    border-color: #ddd !important;
+  }
+
+  /* Page breaks */
+  .page-break {
+    page-break-after: always;
+  }
+}
+
+.receipt-card {
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+  border: 1px dashed #ccc;
+  padding: 20px;
+  font-family: 'Inter', sans-serif;
+}
+
+.institution-header {
+  text-align: center;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #333;
+  padding-bottom: 15px;
+}
+
+.institution-name {
+  font-size: 24px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.receipt-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.receipt-label {
+  font-weight: bold;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #666;
+}
+
+.receipt-value {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.total-row {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 2px solid #333;
+  font-size: 18px;
+  font-weight: 900;
+}
