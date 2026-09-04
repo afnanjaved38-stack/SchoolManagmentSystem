@@ -1,9 +1,9 @@
-# EduPulse (Hackathon Project)
+# CampusCore — School Management Platform
 
-**Alkhidmat / Bano Qabil AI Hackathon submission**
+**Alkhidmat Bano Qabil x Alibaba AI Hackathon submission**
 
-**Hackathon project name:** EduPulse  
 **Software product:** CampusCore — School Management Platform
+**Hackathon project name:** EduPulse  
 
 CampusCore is a school ERP for principals, teachers, students, and parents — plus an AI Learning Companion with classroom-ready visual diagrams (Google Gemini). This repository is submitted to the hackathon under the project name **EduPulse**.
 
