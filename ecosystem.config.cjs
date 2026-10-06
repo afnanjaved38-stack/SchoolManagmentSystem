@@ -1,10 +1,13 @@
 /** PM2 config for CampusCore school demo (CloudPanel Node site) */
+const path = require('path');
+
 module.exports = {
   apps: [
     {
       name: 'campuscore-school',
-      script: 'backend/server.js',
-      cwd: __dirname,
+      script: 'server.js',
+      cwd: path.join(__dirname, 'backend'),
+      exec_mode: 'fork',
       instances: 1,
       autorestart: true,
       max_memory_restart: '512M',
