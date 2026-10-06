@@ -4,9 +4,9 @@
  *   node seed_school.js          → seed only if no students exist
  *   node seed_school.js --fresh  → wipe academic data & reseed
  *
- * Creates ~300 students across grades with ~5 months of:
+ * Creates ~500 students across grades with ~24 months of:
  * attendance, fees/vouchers, diaries, assignments, class tests,
- * plus 2 conducted exam terms with marks.
+ * complaints, student/parent portal logins, and 3 exam terms per year.
  *
  * Admin: afnanjaved38@gmail.com / Admin123 (or ADMIN_* from .env)
  * Teachers: portal logins generated from names (password Teacher123)
@@ -33,10 +33,14 @@ const Diary = require('./models/Diary');
 const Assignment = require('./models/Assignment');
 const ClassTest = require('./models/ClassTest');
 const Holiday = require('./models/Holiday');
+const Complaint = require('./models/Complaint');
 
 const FRESH = process.argv.includes('--fresh');
 const TEACHER_PASSWORD = 'Teacher123';
-const TARGET_STUDENTS = 300;
+const STUDENT_PASSWORD = 'Student123';
+const PARENT_PASSWORD = 'Parent123';
+const TARGET_STUDENTS = Number(process.env.SEED_STUDENTS) || 500;
+const HISTORY_MONTHS = Number(process.env.SEED_MONTHS) || 24;
 
 const TEACHING_STAFF = [
   { name: 'Aqsa Yaseen', gender: 'Female', subjects: ['Islamiyat', 'Urdu', 'Pakistan Studies'], qualifications: ['BA (Islamiyat)'] },
@@ -320,6 +324,7 @@ async function clearSeedData() {
     ExamResult.deleteMany({}),
     ExamTerm.deleteMany({}),
     Holiday.deleteMany({}),
+    Complaint.deleteMany({}),
     Student.deleteMany({}),
     Section.deleteMany({}),
     Class.deleteMany({})
@@ -472,25 +477,30 @@ async function seed() {
 
   await Settings.findOneAndUpdate({}, {}, { upsert: true, new: true });
   await GlobalSession.findOneAndUpdate(
-    { name: 'Academic Year 2025-26' },
-    { name: 'Academic Year 2025-26', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], isActive: true },
+    { name: 'Academic Year 2026-27' },
+    { name: 'Academic Year 2026-27', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], isActive: true },
     { upsert: true, new: true }
   );
 
-  const academicYear = await AcademicYear.findOneAndUpdate(
-    { name: 'Academic Year 2025-26' },
-    {
-      name: 'Academic Year 2025-26',
-      startDate: new Date('2025-08-01'),
-      endDate: new Date('2026-07-31'),
-      isActive: true
-    },
-    { upsert: true, new: true }
-  );
+  const academicYears = [];
+  const yearDefs = [
+    { name: 'Academic Year 2024-25', start: '2024-08-01', end: '2025-07-31', active: false },
+    { name: 'Academic Year 2025-26', start: '2025-08-01', end: '2026-07-31', active: false },
+    { name: 'Academic Year 2026-27', start: '2026-08-01', end: '2027-07-31', active: true }
+  ];
+  for (const y of yearDefs) {
+    const ay = await AcademicYear.findOneAndUpdate(
+      { name: y.name },
+      { name: y.name, startDate: new Date(y.start), endDate: new Date(y.end), isActive: y.active },
+      { upsert: true, new: true }
+    );
+    academicYears.push(ay);
+  }
+  const academicYear = academicYears.find((y) => y.isActive) || academicYears[academicYears.length - 1];
 
-  const feeMonths = lastNMonths(5);
+  const feeMonths = lastNMonths(HISTORY_MONTHS);
   const dataStart = new Date();
-  dataStart.setMonth(dataStart.getMonth() - 5);
+  dataStart.setMonth(dataStart.getMonth() - HISTORY_MONTHS);
   dataStart.setDate(1);
   dataStart.setUTCHours(0, 0, 0, 0);
   const dataEnd = new Date();
@@ -565,7 +575,7 @@ async function seed() {
         const discount = Math.random() < 0.12 ? rand(300, 1500) : 0;
 
         const student = await Student.create({
-          regNo: `STD-2025-${String(regCounter++).padStart(4, '0')}`,
+          regNo: `STD-2026-${String(regCounter++).padStart(4, '0')}`,
           admissionDate,
           name,
           fatherName: pick(FATHER_NAMES),
@@ -600,8 +610,8 @@ async function seed() {
 
   console.log(`Created ${allStudents.length} students`);
 
-  // ─── Fees / vouchers (admission + last 5 months) ─────────────────────────
-  console.log('Generating fee vouchers (5 months)...');
+  // ─── Fees / vouchers (admission + history window) ────────────────────────
+  console.log(`Generating fee vouchers (${HISTORY_MONTHS} months)...`);
   const feeBatch = [];
   for (const { doc: student, payReliability } of allStudents) {
     const cls = classMap.find((c) => c.cls._id.equals(student.class));
@@ -658,7 +668,7 @@ async function seed() {
       });
     }
 
-    if (Math.random() < 0.1) {
+    if (Math.random() < 0.04) {
       const fineMonth = pick(feeMonths);
       const fineAmount = pick([200, 300, 500, 750]);
       const isPaid = Math.random() > 0.4;
@@ -681,8 +691,8 @@ async function seed() {
   await insertChunks(FeeRecord, feeBatch);
   console.log(`  ${feeBatch.length} fee records`);
 
-  // ─── Attendance (last 5 months) ──────────────────────────────────────────
-  console.log('Generating student & teacher attendance (5 months)...');
+  // ─── Attendance ──────────────────────────────────────────────────────────
+  console.log(`Generating student & teacher attendance (${HISTORY_MONTHS} months)...`);
   const attBatch = [];
   for (const { doc: student, attendanceRate } of allStudents) {
     for (const day of schoolDays) {
@@ -758,7 +768,7 @@ async function seed() {
   const assignmentBatch = [];
   for (const sec of sectionRegistry) {
     const teacher = teacherMetas.find((t) => t.doc._id.equals(sec.classTeacherId))?.doc;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < Math.min(8, Math.max(4, Math.floor(HISTORY_MONTHS / 3))); i++) {
       const month = pick(feeMonths);
       const [y, m] = month.split('-').map(Number);
       const due = new Date(y, m - 1, rand(10, 26));
@@ -786,7 +796,7 @@ async function seed() {
   for (const sec of sectionRegistry) {
     const teacher = teacherMetas.find((t) => t.doc._id.equals(sec.classTeacherId))?.doc;
     const sectionStudents = allStudents.filter((s) => s.sectionId.equals(sec.sectionId));
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < Math.min(6, Math.max(2, Math.floor(HISTORY_MONTHS / 4))); i++) {
       const month = feeMonths[Math.min(feeMonths.length - 1, i + 1)];
       const [y, m] = month.split('-').map(Number);
       const date = new Date(y, m - 1, rand(8, 22));
@@ -815,27 +825,38 @@ async function seed() {
   await insertChunks(ClassTest, testBatch, 100);
   console.log(`  ${testBatch.length} class tests`);
 
-  // ─── Two exam terms + results ────────────────────────────────────────────
-  console.log('Creating 2 exam terms with results...');
-  const midTerm = await ExamTerm.create({
-    name: 'Mid Term Examinations 2025-26',
-    academicYear: academicYear._id,
-    termType: 'Mid Term',
-    startDate: new Date(dataStart.getFullYear(), dataStart.getMonth() + 1, 10),
-    endDate: new Date(dataStart.getFullYear(), dataStart.getMonth() + 1, 22),
-    isPublished: true
-  });
-  const finalTerm = await ExamTerm.create({
-    name: 'Second Term Examinations 2025-26',
-    academicYear: academicYear._id,
-    termType: 'Final Term',
-    startDate: new Date(dataEnd.getFullYear(), dataEnd.getMonth() - 1, 5),
-    endDate: new Date(dataEnd.getFullYear(), dataEnd.getMonth() - 1, 18),
-    isPublished: true
-  });
+  // ─── Exam terms (First / Mid / Final per academic year) ───────────────────
+  console.log('Creating exam terms with results...');
+  const examTerms = [];
+  const termSchedule = [
+    { termType: 'First Term', monthOffset: 2, duration: 10 },
+    { termType: 'Mid Term', monthOffset: 5, duration: 12 },
+    { termType: 'Final Term', monthOffset: 9, duration: 14 }
+  ];
+  const now = new Date();
+
+  for (const ay of academicYears) {
+    const ayStart = new Date(ay.startDate);
+    const shortLabel = ay.name.replace('Academic Year ', '');
+    for (const slot of termSchedule) {
+      const termStart = new Date(ayStart.getFullYear(), ayStart.getMonth() + slot.monthOffset, 8);
+      const termEnd = new Date(termStart);
+      termEnd.setDate(termEnd.getDate() + slot.duration);
+      if (termStart > now) continue;
+      const published = termEnd <= now;
+      examTerms.push(await ExamTerm.create({
+        name: `${slot.termType} Examinations ${shortLabel}`,
+        academicYear: ay._id,
+        termType: slot.termType,
+        startDate: termStart,
+        endDate: termEnd,
+        isPublished: published
+      }));
+    }
+  }
 
   const examBatch = [];
-  for (const term of [midTerm, finalTerm]) {
+  for (const term of examTerms.filter((t) => t.isPublished)) {
     for (const { doc: student, className, classId, sectionId } of allStudents) {
       const subjects = subjectsForClass(className);
       const subjectResults = subjects.map((subjectName) => {
@@ -873,7 +894,102 @@ async function seed() {
     }
   }
   await insertChunks(ExamResult, examBatch, 300);
-  console.log(`  ${examBatch.length} exam results (2 terms)`);
+  console.log(`  ${examBatch.length} exam results (${examTerms.filter((t) => t.isPublished).length} published terms)`);
+
+  // ─── Student / parent portal accounts ────────────────────────────────────
+  console.log('Creating student & parent portal logins...');
+  let portalCount = 0;
+  for (const { doc: student } of allStudents) {
+    const regSlug = student.regNo.toLowerCase();
+    const studentEmail = `${regSlug}@school.demo`;
+    const parentEmail = `p.${regSlug}@school.demo`;
+    await User.create({
+      name: student.name,
+      email: studentEmail,
+      password: STUDENT_PASSWORD,
+      plainPassword: STUDENT_PASSWORD,
+      role: 'student',
+      studentProfile: student._id
+    });
+    await User.create({
+      name: `${student.fatherName} (Parent)`,
+      email: parentEmail,
+      password: PARENT_PASSWORD,
+      plainPassword: PARENT_PASSWORD,
+      role: 'parent',
+      studentProfile: student._id,
+      studentProfiles: [student._id]
+    });
+    portalCount += 2;
+  }
+  console.log(`  ${portalCount} portal accounts (Student123 / Parent123)`);
+
+  // ─── Complaints & notices ───────────────────────────────────────────────
+  console.log('Generating complaints & parent notices...');
+  const complaintTemplates = [
+    { cat: 'Academic', desc: 'Request for extra coaching session before upcoming term tests.' },
+    { cat: 'Transport', desc: 'School van arrived 25 minutes late on consecutive days.' },
+    { cat: 'Fee', desc: 'Clarification needed on misc charges on last month voucher.' },
+    { cat: 'Discipline', desc: 'Concern about classroom behaviour — kindly investigate.' },
+    { cat: 'General', desc: 'Suggestion to improve parent-teacher meeting schedule.' }
+  ];
+  const noticeTemplates = [
+    'Irregular homework submission noted — please ensure daily diary is signed.',
+    'Student was late to assembly three times this week.',
+    'Excellent improvement in mathematics class tests — keep encouraging at home.',
+    'Please submit pending lab fee at the office by Friday.',
+    'Parent meeting scheduled — your attendance is requested.'
+  ];
+  const complaintBatch = [];
+  const sampleStudents = shuffle(allStudents).slice(0, Math.min(120, allStudents.length));
+  for (let i = 0; i < sampleStudents.length; i++) {
+    const { doc: student } = sampleStudents[i];
+    const parentUser = await User.findOne({ role: 'parent', studentProfile: student._id });
+    if (!parentUser) continue;
+    const tpl = pick(complaintTemplates);
+    complaintBatch.push({
+      submittedByRole: 'parent',
+      user: parentUser._id,
+      student: student._id,
+      targetRole: 'admin',
+      category: tpl.cat,
+      description: tpl.desc,
+      status: pick(['Pending', 'Under Review', 'Resolved', 'Acknowledged']),
+      adminResponse: Math.random() > 0.45 ? 'Thank you — office will follow up within 2 working days.' : ''
+    });
+  }
+  const loginTeachers = teacherMetas.filter((t) => t.hasLogin);
+  for (let i = 0; i < 35; i++) {
+    const { doc: student } = pick(allStudents);
+    const teacherMeta = pick(loginTeachers);
+    const teacherUser = await User.findOne({ role: 'teacher', teacherProfile: teacherMeta.doc._id });
+    if (!teacherUser) continue;
+    complaintBatch.push({
+      submittedByRole: 'teacher',
+      user: teacherUser._id,
+      teacher: teacherMeta.doc._id,
+      student: student._id,
+      targetRole: 'parent',
+      category: 'Academic',
+      description: pick(noticeTemplates),
+      status: pick(['Acknowledged', 'Resolved', 'Pending']),
+      adminResponse: ''
+    });
+  }
+  for (let i = 0; i < 15; i++) {
+    complaintBatch.push({
+      submittedByRole: 'admin',
+      user: admin._id,
+      student: pick(allStudents).doc._id,
+      targetRole: 'parent',
+      category: 'General',
+      description: pick(noticeTemplates),
+      status: 'Acknowledged',
+      adminResponse: 'Official notice from Principal office.'
+    });
+  }
+  await Complaint.insertMany(complaintBatch);
+  console.log(`  ${complaintBatch.length} complaints / notices`);
 
   // ─── Holidays ────────────────────────────────────────────────────────────
   await Holiday.insertMany([
@@ -910,14 +1026,19 @@ async function seed() {
   console.log(`Assignments:    ${assignmentBatch.length}`);
   console.log(`Class tests:    ${testBatch.length}`);
   console.log(`Exam results:   ${examBatch.length}`);
+  console.log(`Exam terms:     ${examTerms.length} (${examTerms.filter((t) => t.isPublished).length} published)`);
+  console.log(`Complaints:     ${complaintBatch.length}`);
+  console.log(`Portal users:   ${portalCount}`);
   console.log(`Substitutions:  ${subCount}`);
   console.log(`Data window:    ${feeMonths[0]} → ${feeMonths[feeMonths.length - 1]}`);
-  console.log('\n--- ADMIN (live demo) ---');
+  console.log('\n--- ADMIN / PRINCIPAL (live demo) ---');
   console.log(`${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD}`);
-  console.log('\n--- TEACHER PORTAL LOGINS (password for all: Teacher123) ---');
+  console.log('\n--- TEACHER PORTAL (password for all: Teacher123) ---');
   loginCredentials.slice(0, 10).forEach((c) => console.log(`  ${c.email}  (${c.name})`));
   console.log('  ... (remaining teachers same password)');
-  console.log('\nStudent / Parent accounts: create from Admin portal (Students → generate login).');
+  console.log('\n--- STUDENT / PARENT PORTAL ---');
+  console.log(`  Email pattern: std-2026-0001@school.demo / p.std-2026-0001@school.demo`);
+  console.log(`  Passwords: ${STUDENT_PASSWORD} (student) · ${PARENT_PASSWORD} (parent)`);
   process.exit(0);
 }
 
